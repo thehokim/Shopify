@@ -1,0 +1,358 @@
+{
+  "info": {
+    "name": "Shopify Clone API",
+    "description": "Complete API collection for Shopify Clone platform",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8003/api/v1"
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "tenant_id",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register Customer",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newuser@example.com\",\n  \"password\": \"password123\",\n  \"full_name\": \"New User\",\n  \"phone\": \"+998901234567\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const response = pm.response.json();",
+                  "pm.collectionVariables.set('access_token', response.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/x-www-form-urlencoded"}],
+            "url": "{{base_url}}/auth/login",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key": "username", "value": "customer@example.com"},
+                {"key": "password", "value": "customer123"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/auth/me"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tenants",
+      "item": [
+        {
+          "name": "Create Tenant (Admin Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/tenants/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Tech Store\",\n  \"slug\": \"tech-store\",\n  \"description\": \"Your electronics store\",\n  \"owner_email\": \"owner@techstore.com\",\n  \"owner_password\": \"owner123\",\n  \"owner_full_name\": \"Tech Store Owner\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Tenants",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/tenants/"
+          }
+        },
+        {
+          "name": "Get Tenant",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/tenants/{{tenant_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "Create Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/categories/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Electronics\",\n  \"slug\": \"electronics\",\n  \"description\": \"Electronic devices\",\n  \"category_type\": \"electronics\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Categories",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/categories/?tenant_id={{tenant_id}}",
+              "query": [{"key": "tenant_id", "value": "{{tenant_id}}"}]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/products/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category_id\": 1,\n  \"name\": \"Blue T-Shirt\",\n  \"slug\": \"blue-t-shirt\",\n  \"description\": \"Comfortable blue t-shirt\",\n  \"short_description\": \"Blue cotton t-shirt\",\n  \"sku\": \"TSH-BLU-001\",\n  \"base_price\": 30.00,\n  \"discount_price\": 25.00,\n  \"stock_quantity\": 50,\n  \"status\": \"active\",\n  \"is_featured\": true,\n  \"attributes\": [],\n  \"images\": [\n    {\n      \"image_url\": \"https://via.placeholder.com/800\",\n      \"is_primary\": true,\n      \"sort_order\": 0\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {
+              "raw": "{{base_url}}/products/?tenant_id={{tenant_id}}",
+              "query": [{"key": "tenant_id", "value": "{{tenant_id}}"}]
+            }
+          }
+        },
+        {
+          "name": "Get Product",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/products/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Search Products",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/search/products?tenant_id={{tenant_id}}",
+              "query": [{"key": "tenant_id", "value": "{{tenant_id}}"}]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"t-shirt\",\n  \"filters\": {\n    \"min_price\": 20,\n    \"max_price\": 50,\n    \"in_stock\": true\n  },\n  \"page\": 1,\n  \"page_size\": 20,\n  \"sort_by\": \"price_asc\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Autocomplete Suggestions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/search/suggest?q=shirt&tenant_id={{tenant_id}}",
+              "query": [
+                {"key": "q", "value": "shirt"},
+                {"key": "tenant_id", "value": "{{tenant_id}}"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cart",
+      "item": [
+        {
+          "name": "Add to Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/cart/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": 1,\n  \"quantity\": 2,\n  \"selected_attributes\": {\n    \"size\": \"M\",\n    \"color\": \"Black\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Cart",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/cart/"
+          }
+        },
+        {
+          "name": "Update Cart Item",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/cart/1",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 3\n}"
+            }
+          }
+        },
+        {
+          "name": "Remove from Cart",
+          "request": {
+            "method": "DELETE",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/cart/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wishlist",
+      "item": [
+        {
+          "name": "Add to Wishlist",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/wishlist/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Wishlist",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/wishlist/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Create Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/orders/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"quantity\": 2,\n      \"selected_attributes\": {\"size\": \"M\", \"color\": \"Black\"}\n    }\n  ],\n  \"shipping_address\": {\n    \"street\": \"123 Main St\",\n    \"city\": \"Tashkent\",\n    \"country\": \"Uzbekistan\",\n    \"postal_code\": \"100000\"\n  },\n  \"payment_method\": \"card\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Orders",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/orders/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Get Analytics Summary",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/analytics/summary"
+          }
+        },
+        {
+          "name": "Most Wished Products",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/analytics/products/most-wished"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Upload",
+      "item": [
+        {
+          "name": "Upload Product Image",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/upload/product-image",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key": "file", "type": "file", "src": ""}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
