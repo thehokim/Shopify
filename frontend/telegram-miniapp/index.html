@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Shopify Clone - Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            padding: 16px;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 1px solid var(--tg-theme-hint-color, #ccc);
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        
+        .search-bar {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--tg-theme-hint-color, #ccc);
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 16px;
+            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            color: var(--tg-theme-text-color, #000000);
+        }
+        
+        .categories {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+        }
+        
+        .category-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--tg-theme-button-color, #0088cc);
+            border-radius: 20px;
+            background: var(--tg-theme-button-color, #0088cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            white-space: nowrap;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 80px;
+        }
+        
+        .product-card {
+            border: 1px solid var(--tg-theme-hint-color, #ccc);
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--tg-theme-secondary-bg-color, #f9f9f9);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .product-card:active {
+            transform: scale(0.95);
+        }
+        
+        .product-image {
+            width: 100%;
+            height: 150px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+        }
+        
+        .product-info {
+            padding: 12px;
+        }
+        
+        .product-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+        
+        .product-price {
+            color: var(--tg-theme-button-color, #0088cc);
+            font-weight: 700;
+            font-size: 16px;
+            margin-top: 8px;
+        }
+        
+        .cart {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--tg-theme-bg-color, #ffffff);
+            padding: 16px;
+            border-top: 1px solid var(--tg-theme-hint-color, #ccc);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .cart-info {
+            font-weight: 600;
+        }
+        
+        .checkout-btn {
+            padding: 12px 24px;
+            background: var(--tg-theme-button-color, #0088cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛍️ Shopify Clone</h1>
+        <p>Shop directly in Telegram</p>
+    </div>
+    
+    <input type="text" class="search-bar" placeholder="🔍 Search products..." id="searchBar">
+    
+    <div class="categories">
+        <button class="category-btn">📱 Electronics</button>
+        <button class="category-btn">👕 Fashion</button>
+        <button class="category-btn">🏠 Home</button>
+        <button class="category-btn">📚 Books</button>
+        <button class="category-btn">🎮 Gaming</button>
+    </div>
+    
+    <div class="products-grid" id="productsGrid"></div>
+    
+    <div class="cart">
+        <div class="cart-info">
+            <div>Cart: <span id="cartCount">0</span> items</div>
+            <div>Total: $<span id="cartTotal">0.00</span></div>
+        </div>
+        <button class="checkout-btn" id="checkoutBtn">Checkout</button>
+    </div>
+
+    <script>
+        // Initialize Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        
+        // Sample products
+        const products = [
+            { id: 1, name: "Wireless Headphones", price: 89.99, emoji: "🎧" },
+            { id: 2, name: "Smart Watch", price: 199.99, emoji: "⌚" },
+            { id: 3, name: "Laptop Stand", price: 45.50, emoji: "💻" },
+            { id: 4, name: "USB-C Cable", price: 15.99, emoji: "🔌" },
+            { id: 5, name: "Phone Case", price: 25.00, emoji: "📱" },
+            { id: 6, name: "Keyboard", price: 79.99, emoji: "⌨️" },
+            { id: 7, name: "Mouse Pad", price: 12.99, emoji: "🖱️" },
+            { id: 8, name: "Monitor", price: 299.99, emoji: "🖥️" }
+        ];
+        
+        let cart = [];
+        
+        // Render products
+        function renderProducts() {
+            const grid = document.getElementById('productsGrid');
+            grid.innerHTML = products.map(product => `
+                <div class="product-card" onclick="addToCart(${product.id})">
+                    <div class="product-image">${product.emoji}</div>
+                    <div class="product-info">
+                        <div class="product-name">${product.name}</div>
+                        <div class="product-price">$${product.price}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Add to cart
+        function addToCart(productId) {
+            const product = products.find(p => p.id === productId);
+            cart.push(product);
+            updateCart();
+            tg.HapticFeedback.impactOccurred('light');
+        }
+        
+        // Update cart
+        function updateCart() {
+            const count = cart.length;
+            const total = cart.reduce((sum, item) => sum + item.price, 0);
+            
+            document.getElementById('cartCount').textContent = count;
+            document.getElementById('cartTotal').textContent = total.toFixed(2);
+        }
+        
+        // Checkout
+        document.getElementById('checkoutBtn').addEventListener('click', () => {
+            if (cart.length === 0) {
+                tg.showAlert('Your cart is empty!');
+                return;
+            }
+            
+            const orderData = {
+                items: cart,
+                total: cart.reduce((sum, item) => sum + item.price, 0),
+                user: tg.initDataUnsafe.user
+            };
+            
+            // Send data to bot
+            tg.sendData(JSON.stringify(orderData));
+            tg.close();
+        });
+        
+        // Search
+        document.getElementById('searchBar').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            // Implement search logic here
+        });
+        
+        // Initialize
+        renderProducts();
+    </script>
+</body>
+</html>

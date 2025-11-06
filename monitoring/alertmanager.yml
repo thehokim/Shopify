@@ -1,28 +1,20 @@
 global:
   resolve_timeout: 5m
-  # SMTP Configuration for Email alerts
   smtp_smarthost: 'smtp.gmail.com:587'
-  smtp_from: 'alerts@yourdomain.com'
-  smtp_auth_username: 'your-email@gmail.com'
-  smtp_auth_password: 'your-app-password'
+  smtp_from: 'hokim1430@gmail.com'
+  smtp_auth_username: 'hokim1430@gmail.com'
+  smtp_auth_password: 'evwfxjjkzvcplucu'
   smtp_require_tls: true
 
-# Templates
-templates:
-  - '/etc/alertmanager/templates/*.tmpl'
-
-# Route alerts
 route:
-  # Default receiver
-  receiver: 'telegram'
+  receiver: 'telegram-and-email'
   group_by: ['alertname', 'severity']
   group_wait: 10s
   group_interval: 10s
   repeat_interval: 12h
   
-  # Child routes
   routes:
-    # Critical alerts -> Telegram + Email + SMS
+    # Critical alerts -> Telegram + Email
     - match:
         severity: critical
       receiver: 'critical-alerts'
@@ -32,105 +24,98 @@ route:
     # Warning alerts -> Telegram only
     - match:
         severity: warning
-      receiver: 'telegram'
+      receiver: 'telegram-only'
       repeat_interval: 1h
-    
-    # Business alerts -> Telegram + Email
-    - match:
-        component: business
-      receiver: 'business-alerts'
-      repeat_interval: 2h
 
-# Receivers
 receivers:
-  # Telegram receiver (main channel)
-  - name: 'telegram'
+  # Telegram + Email для обычных алертов
+  - name: 'telegram-and-email'
     telegram_configs:
-      - bot_token: 'YOUR_TELEGRAM_BOT_TOKEN'
-        chat_id: YOUR_CHAT_ID
+      - bot_token: '8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ'
+        chat_id: 5008138452
         parse_mode: 'HTML'
         message: |
-          <b> Alert: {{ .GroupLabels.alertname }}</b>
+          ⚠️ <b>Alert: {{ .GroupLabels.alertname }}</b>
           
           <b>Severity:</b> {{ .CommonLabels.severity }}
-          <b>Component:</b> {{ .CommonLabels.component }}
           
           {{ range .Alerts }}
-          <b>Description:</b> {{ .Annotations.description }}
-          <b>Action:</b> {{ .Annotations.action }}
+          📝 {{ .Annotations.description }}
+          💡 <b>Action:</b> {{ .Annotations.action }}
+          {{ end }}
+    
+    email_configs:
+      - to: 'hokim1430@gmail.com'
+        headers:
+          Subject: '⚠️ Alert: {{ .GroupLabels.alertname }}'
+        html: |
+          <h2>Alert: {{ .GroupLabels.alertname }}</h2>
+          <p><strong>Severity:</strong> {{ .CommonLabels.severity }}</p>
+          {{ range .Alerts }}
+          <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+          <p><strong>Action:</strong> {{ .Annotations.action }}</p>
+          <p><strong>Time:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05" }}</p>
           {{ end }}
 
-  # Critical alerts (Telegram + Email + PagerDuty)
+  # Только Telegram для warning
+  - name: 'telegram-only'
+    telegram_configs:
+      - bot_token: '8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ'
+        chat_id: 5008138452
+        parse_mode: 'HTML'
+        message: |
+          ⚠️ <b>{{ .GroupLabels.alertname }}</b>
+          
+          {{ range .Alerts }}
+          {{ .Annotations.description }}
+          {{ end }}
+
+  # Critical alerts -> Telegram + Email с высоким приоритетом
   - name: 'critical-alerts'
     telegram_configs:
-      - bot_token: 'YOUR_TELEGRAM_BOT_TOKEN'
-        chat_id: YOUR_CHAT_ID
+      - bot_token: '8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ'
+        chat_id: 5008138452
         parse_mode: 'HTML'
         message: |
-          <b>CRITICAL ALERT</b> 
+          🔥🔥🔥 <b>CRITICAL ALERT</b> 🔥🔥🔥
           
-          <b>Alert:</b> {{ .GroupLabels.alertname }}
-          <b>Severity:</b> CRITICAL
+          <b>{{ .GroupLabels.alertname }}</b>
           
           {{ range .Alerts }}
-          {{ .Annotations.description }}
+          🚨 {{ .Annotations.description }}
           
-          <b>⚡ Immediate Action Required:</b>
+          ⚡ <b>URGENT ACTION REQUIRED:</b>
           {{ .Annotations.action }}
+          
+          🕐 Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
           {{ end }}
     
     email_configs:
-      - to: 'oncall@yourdomain.com, ops@yourdomain.com'
+      - to: 'hokim1430@gmail.com'
         headers:
           Subject: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+          Priority: 'urgent'
         html: |
-          <h2>Critical Alert: {{ .GroupLabels.alertname }}</h2>
-          <p><strong>Severity:</strong> CRITICAL</p>
-          {{ range .Alerts }}
-          <p>{{ .Annotations.description }}</p>
-          <p><strong>Action:</strong> {{ .Annotations.action }}</p>
-          {{ end }}
-    
-    # Optional: PagerDuty integration
-    # pagerduty_configs:
-    #   - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+          <html>
+          <body style="font-family: Arial, sans-serif;">
+            <div style="background-color: #ff0000; color: white; padding: 20px;">
+              <h1>🔥 CRITICAL ALERT</h1>
+            </div>
+            <div style="padding: 20px;">
+              <h2>{{ .GroupLabels.alertname }}</h2>
+              <p><strong>Severity:</strong> <span style="color: red;">CRITICAL</span></p>
+              {{ range .Alerts }}
+              <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+              <p><strong>⚡ Action Required:</strong> {{ .Annotations.action }}</p>
+              <p><strong>Time:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05" }}</p>
+              {{ end }}
+            </div>
+          </body>
+          </html>
 
-  # Business alerts
-  - name: 'business-alerts'
-    telegram_configs:
-      - bot_token: 'YOUR_TELEGRAM_BOT_TOKEN'
-        chat_id: YOUR_BUSINESS_CHAT_ID
-        parse_mode: 'HTML'
-        message: |
-          <b>Business Alert: {{ .GroupLabels.alertname }}</b>
-          
-          {{ range .Alerts }}
-          {{ .Annotations.description }}
-          {{ end }}
-    
-    email_configs:
-      - to: 'business@yourdomain.com'
-        headers:
-          Subject: '📊 Business Alert: {{ .GroupLabels.alertname }}'
-
-  # Webhook receiver (for Slack, Discord, etc.)
-  - name: 'webhook'
-    webhook_configs:
-      - url: 'http://yourserver/api/alerts'
-        send_resolved: true
-
-# Inhibition rules (prevent spam)
 inhibit_rules:
-  # Inhibit warning if critical is firing
   - source_match:
       severity: 'critical'
     target_match:
       severity: 'warning'
     equal: ['alertname', 'component']
-
-  # Inhibit all alerts if API is down
-  - source_match:
-      alertname: 'APIDown'
-    target_match_re:
-      alertname: '.*'
-    equal: ['instance']

@@ -46,3 +46,6 @@ def get_settings():
 
 
 settings = get_settings()
+
+    # Telegram Mini App
+    WEBAPP_URL: str = "https://yourdomain.com/miniapp"

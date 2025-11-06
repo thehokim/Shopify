@@ -1,8 +1,6 @@
 version: '3.8'
 
 services:
-  # ==================== CORE SERVICES ====================
-  
   api:
     build: .
     container_name: shopify_api
@@ -14,10 +12,11 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopify_db
       - REDIS_URL=redis://redis:6379
       - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672
-      - SENTRY_DSN=${SENTRY_DSN}
-      - SECRET_KEY=${SECRET_KEY}
+      - SECRET_KEY=your-secret-key-change-in-production
     depends_on:
       - postgres
       - redis
@@ -25,10 +24,7 @@ services:
       - elasticsearch
       - rabbitmq
     restart: unless-stopped
-    labels:
-      - "prometheus.scrape=true"
-      - "prometheus.port=8000"
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   postgres:
     image: postgres:15-alpine
@@ -51,14 +47,13 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
-    command: redis-server --appendonly yes
 
   minio:
     image: minio/minio:latest
     container_name: shopify_minio
     ports:
-      - "9002:9000"
-      - "9003:9001"
+      - "9004:9000"
+      - "9005:9001"
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
@@ -76,20 +71,16 @@ services:
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
       - "9201:9200"
-      - "9301:9300"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     restart: unless-stopped
 
-  # ==================== MESSAGE QUEUE ====================
-
-  # RabbitMQ
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: shopify_rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "5673:5672"
+      - "15673:15672"
     environment:
       - RABBITMQ_DEFAULT_USER=admin
       - RABBITMQ_DEFAULT_PASS=admin
@@ -97,24 +88,23 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     restart: unless-stopped
 
-  # Celery Worker
   celery_worker:
     build: .
     container_name: shopify_celery_worker
-    command: celery -A app.celery_app worker --loglevel=info --concurrency=4
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=2
     volumes:
       - .:/app
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopify_db
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672
+      - PYTHONUNBUFFERED=1
     depends_on:
       - rabbitmq
       - redis
       - postgres
     restart: unless-stopped
 
-  # Celery Beat (periodic tasks)
   celery_beat:
     build: .
     container_name: shopify_celery_beat
@@ -125,54 +115,89 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopify_db
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672
+      - PYTHONUNBUFFERED=1
     depends_on:
       - rabbitmq
       - redis
     restart: unless-stopped
 
-  # ==================== MONITORING ====================
+  # Monitoring Bot - для алертов
+  monitoring_bot:
+    build: .
+    container_name: shopify_monitoring_bot
+    command: python -m telegram_bot.monitoring.bot
+    volumes:
+      - .:/app
+    environment:
+      - MONITORING_BOT_TOKEN=8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
 
-  # Prometheus - сбор метрик
+  # Marketplace Bot - для покупок
+  marketplace_bot:
+    build: .
+    container_name: shopify_marketplace_bot
+    command: python -m telegram_bot.marketplace.bot
+    volumes:
+      - .:/app
+    environment:
+      - MARKETPLACE_BOT_TOKEN=${MARKETPLACE_BOT_TOKEN}
+      - WEBAPP_URL=${WEBAPP_URL:-https://yourdomain.com/miniapp}
+      - API_URL=http://api:8000
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopify_db
+    depends_on:
+      - api
+      - postgres
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:latest
     container_name: shopify_prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
     restart: unless-stopped
 
-  # Grafana - визуализация метрик
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: shopify_alertmanager
+    ports:
+      - "9094:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    restart: unless-stopped
+
   grafana:
     image: grafana/grafana:latest
     container_name: shopify_grafana
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_INSTALL_PLUGINS=grafana-piechart-panel
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
     depends_on:
       - prometheus
     restart: unless-stopped
 
-  # Node Exporter - метрики системы
   node_exporter:
     image: prom/node-exporter:latest
     container_name: shopify_node_exporter
     ports:
-      - "9100:9100"
+      - "9101:9100"
     restart: unless-stopped
 
-  # Postgres Exporter - метрики БД
   postgres_exporter:
     image: prometheuscommunity/postgres-exporter
     container_name: shopify_postgres_exporter
@@ -184,91 +209,15 @@ services:
       - postgres
     restart: unless-stopped
 
-  # Redis Exporter - метрики Redis
   redis_exporter:
     image: oliver006/redis_exporter:latest
     container_name: shopify_redis_exporter
     ports:
-      - "9121:9121"
+      - "9122:9121"
     environment:
       - REDIS_ADDR=redis://redis:6379
     depends_on:
       - redis
-    restart: unless-stopped
-
-  # ==================== LOGGING ====================
-
-  # Loki - хранилище логов
-  loki:
-    image: grafana/loki:latest
-    container_name: shopify_loki
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml
-      - loki_data:/loki
-    command: -config.file=/etc/loki/local-config.yaml
-    restart: unless-stopped
-
-  # Promtail - отправка логов в Loki
-  promtail:
-    image: grafana/promtail:latest
-    container_name: shopify_promtail
-    volumes:
-      - /var/log:/var/log
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml
-    command: -config.file=/etc/promtail/config.yml
-    depends_on:
-      - loki
-    restart: unless-stopped
-
-  # ==================== REVERSE PROXY ====================
-
-  nginx:
-    image: nginx:alpine
-    container_name: shopify_nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/ssl:/etc/nginx/ssl
-      - ./static:/var/www/static
-    depends_on:
-      - api
-    restart: unless-stopped
-
-  # ==================== OPTIONAL SERVICES ====================
-
-  # Portainer - Docker management UI
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: shopify_portainer
-    ports:
-      - "9000:9000"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    restart: unless-stopped
-
-  # Metabase - Business Intelligence
-  metabase:
-    image: metabase/metabase:latest
-    container_name: shopify_metabase
-    ports:
-      - "3001:3000"
-    environment:
-      - MB_DB_TYPE=postgres
-      - MB_DB_DBNAME=metabase
-      - MB_DB_PORT=5432
-      - MB_DB_USER=postgres
-      - MB_DB_PASS=postgres
-      - MB_DB_HOST=postgres
-    depends_on:
-      - postgres
-    volumes:
-      - metabase_data:/metabase-data
     restart: unless-stopped
 
 volumes:
@@ -279,9 +228,6 @@ volumes:
   rabbitmq_data:
   prometheus_data:
   grafana_data:
-  loki_data:
-  portainer_data:
-  metabase_data:
 
 networks:
   default:

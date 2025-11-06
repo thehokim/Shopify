@@ -14,10 +14,14 @@ class MinIOService:
             secret_key=settings.MINIO_SECRET_KEY,
             secure=settings.MINIO_SECURE
         )
-        self._ensure_buckets()
+        # НЕ создаем buckets сразу при инициализации
+        self._buckets_initialized = False
     
     def _ensure_buckets(self):
-        """Create buckets if they don't exist"""
+        """Create buckets if they don't exist (lazy initialization)"""
+        if self._buckets_initialized:
+            return
+        
         buckets = [
             settings.MINIO_BUCKET_PRODUCTS,
             settings.MINIO_BUCKET_AVATARS
@@ -42,7 +46,11 @@ class MinIOService:
                     import json
                     self.client.set_bucket_policy(bucket, json.dumps(policy))
             except S3Error as e:
-                print(f"Error creating bucket {bucket}: {e}")
+                print(f"Warning: Could not create bucket {bucket}: {e}")
+            except Exception as e:
+                print(f"Warning: Error with MinIO bucket {bucket}: {e}")
+        
+        self._buckets_initialized = True
     
     def upload_file(
         self,
@@ -53,6 +61,9 @@ class MinIOService:
     ) -> Optional[str]:
         """Upload file to MinIO"""
         try:
+            # Ensure buckets exist before uploading
+            self._ensure_buckets()
+            
             # Get file size
             file.seek(0, 2)
             file_size = file.tell()
@@ -126,5 +137,5 @@ class MinIOService:
             return []
 
 
-# Create singleton instance
+# Create singleton instance (but don't initialize buckets yet)
 minio_service = MinIOService()
