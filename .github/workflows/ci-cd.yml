@@ -1,0 +1,257 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio black flake8
+
+      - name: Run linting
+        run: |
+          black --check app/
+          flake8 app/ --max-line-length=100 --exclude=__pycache__
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379
+          SECRET_KEY: test-secret-key
+        run: |
+          pytest tests/ -v --cov=app --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Python dependency check
+        run: |
+          pip install safety
+          safety check --json
+
+  build:
+    name: Build and Push Docker Image
+    needs: [test, security]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://staging.yourdomain.com
+
+    steps:
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /opt/shopify-clone
+            docker-compose pull
+            docker-compose up -d
+            docker-compose exec -T api alembic upgrade head
+
+      - name: Run smoke tests
+        run: |
+          sleep 30
+          curl -f https://staging.yourdomain.com/health || exit 1
+
+      - name: Notify Telegram
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            🚀 Staging deployment successful!
+            
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Message: ${{ github.event.head_commit.message }}
+
+  deploy-production:
+    name: Deploy to Production
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://yourdomain.com
+
+    steps:
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /opt/shopify-clone
+            docker-compose pull
+            docker-compose up -d --no-deps api
+            docker-compose exec -T api alembic upgrade head
+
+      - name: Health check
+        run: |
+          sleep 30
+          for i in {1..10}; do
+            if curl -f https://yourdomain.com/health; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Health check failed"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure()
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /opt/shopify-clone
+            docker-compose down
+            docker-compose up -d
+
+      - name: Notify Telegram
+        if: always()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ${{ job.status == 'success' && '✅' || '❌' }} Production deployment ${{ job.status }}!
+            
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Message: ${{ github.event.head_commit.message }}
+            
+            URL: https://yourdomain.com
+
+      - name: Create Sentry release
+        if: success()
+        uses: getsentry/action-release@v1
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: your-org
+          SENTRY_PROJECT: shopify-clone
+        with:
+          environment: production
+          version: ${{ github.sha }}

@@ -1,0 +1,471 @@
+groups:
+  # ==================== APPLICATION ALERTS ====================
+  - name: application_alerts
+    interval: 30s
+    rules:
+      # API is down
+      - alert: APIDown
+        expr: up{job="fastapi"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "API is down"
+          description: "FastAPI application has been down for more than 1 minute"
+          action: "Check docker logs: docker-compose logs api"
+
+      # High error rate (5xx errors)
+      - alert: HighErrorRate
+        expr: |
+          rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanize }} requests/second (>5%)"
+          action: "Check Sentry dashboard and application logs"
+
+      # Slow API response time
+      - alert: SlowResponseTime
+        expr: |
+          histogram_quantile(0.95, 
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API response time is slow"
+          description: "95th percentile response time is {{ $value | humanize }}s (>1s)"
+          action: "Check database queries and application performance"
+
+      # High request rate
+      - alert: HighRequestRate
+        expr: |
+          rate(http_requests_total[1m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Unusually high request rate"
+          description: "Request rate is {{ $value | humanize }} req/s"
+          action: "Check for potential DDoS attack or bot traffic"
+
+      # API latency spike
+      - alert: APILatencySpike
+        expr: |
+          rate(http_request_duration_seconds_sum[5m]) 
+          / rate(http_request_duration_seconds_count[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API latency spike detected"
+          description: "Average response time is {{ $value | humanize }}s"
+
+  # ==================== DATABASE ALERTS ====================
+  - name: database_alerts
+    interval: 30s
+    rules:
+      # Database is down
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "Database has been unreachable for more than 1 minute"
+          action: "Check postgres container: docker-compose logs postgres"
+
+      # Too many database connections
+      - alert: HighDatabaseConnections
+        expr: pg_stat_database_numbackends > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "High number of database connections"
+          description: "Current connections: {{ $value }} (threshold: 80)"
+          action: "Check for connection leaks in application code"
+
+      # Slow queries
+      - alert: SlowDatabaseQueries
+        expr: |
+          rate(pg_stat_database_blks_read[5m]) 
+          / rate(pg_stat_database_blks_hit[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database queries are slow"
+          description: "Cache hit ratio is low: {{ $value | humanizePercentage }}"
+          action: "Review and optimize slow queries, add indexes"
+
+      # Database size growing rapidly
+      - alert: DatabaseSizeGrowing
+        expr: |
+          rate(pg_database_size_bytes[1h]) > 1000000000
+        for: 1h
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database growing rapidly"
+          description: "Database growing at {{ $value | humanize }}B/hour (>1GB/hour)"
+          action: "Investigate data growth, check for log tables"
+
+      # Too many idle connections
+      - alert: TooManyIdleConnections
+        expr: |
+          pg_stat_activity_count{state="idle"} > 20
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Too many idle database connections"
+          description: "Idle connections: {{ $value }}"
+          action: "Review connection pooling settings"
+
+  # ==================== REDIS ALERTS ====================
+  - name: redis_alerts
+    interval: 30s
+    rules:
+      # Redis is down
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been unreachable for more than 1 minute"
+          action: "Check redis container: docker-compose logs redis"
+
+      # High memory usage
+      - alert: RedisHighMemory
+        expr: |
+          redis_memory_used_bytes 
+          / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Memory usage: {{ $value | humanizePercentage }} (>90%)"
+          action: "Consider increasing Redis memory or clearing old keys"
+
+      # Too many connected clients
+      - alert: RedisTooManyClients
+        expr: redis_connected_clients > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Too many Redis clients"
+          description: "Connected clients: {{ $value }}"
+
+      # High eviction rate
+      - alert: RedisHighEvictionRate
+        expr: rate(redis_evicted_keys_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "High Redis key eviction rate"
+          description: "Eviction rate: {{ $value }} keys/s"
+          action: "Increase Redis memory or review cache policy"
+
+  # ==================== RABBITMQ ALERTS ====================
+  - name: rabbitmq_alerts
+    interval: 30s
+    rules:
+      # RabbitMQ is down
+      - alert: RabbitMQDown
+        expr: up{job="rabbitmq"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: queue
+        annotations:
+          summary: "RabbitMQ is down"
+          description: "Message queue has been unreachable for more than 1 minute"
+          action: "Check rabbitmq container: docker-compose logs rabbitmq"
+
+      # Too many unacked messages
+      - alert: TooManyUnackedMessages
+        expr: rabbitmq_queue_messages_unacked > 1000
+        for: 10m
+        labels:
+          severity: warning
+          component: queue
+        annotations:
+          summary: "Too many unacknowledged messages"
+          description: "Unacked messages: {{ $value }} in {{ $labels.queue }}"
+          action: "Check Celery workers, they might be stuck or overloaded"
+
+      # Queue is growing
+      - alert: QueueGrowing
+        expr: |
+          rate(rabbitmq_queue_messages_ready[5m]) > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: queue
+        annotations:
+          summary: "Message queue is growing"
+          description: "Queue {{ $labels.queue }} growing at {{ $value }} msgs/s"
+          action: "Scale up Celery workers or investigate slow tasks"
+
+      # High queue size
+      - alert: HighQueueSize
+        expr: rabbitmq_queue_messages > 10000
+        for: 5m
+        labels:
+          severity: critical
+          component: queue
+        annotations:
+          summary: "Queue size is critically high"
+          description: "Queue {{ $labels.queue }} has {{ $value }} messages"
+          action: "Immediately scale workers or investigate processing issues"
+
+  # ==================== CELERY ALERTS ====================
+  - name: celery_alerts
+    interval: 30s
+    rules:
+      # Celery worker is down
+      - alert: CeleryWorkerDown
+        expr: celery_workers_online == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: worker
+        annotations:
+          summary: "No Celery workers online"
+          description: "All Celery workers are down"
+          action: "Check celery_worker container: docker-compose logs celery_worker"
+
+      # High task failure rate
+      - alert: HighTaskFailureRate
+        expr: |
+          rate(celery_task_failed_total[5m]) 
+          / rate(celery_task_received_total[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "High Celery task failure rate"
+          description: "Task failure rate: {{ $value | humanizePercentage }} (>10%)"
+          action: "Check Celery logs and Sentry for errors"
+
+      # Tasks taking too long
+      - alert: SlowCeleryTasks
+        expr: |
+          histogram_quantile(0.95, 
+            rate(celery_task_runtime_seconds_bucket[5m])
+          ) > 300
+        for: 10m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "Celery tasks are taking too long"
+          description: "95th percentile task runtime: {{ $value }}s (>5min)"
+
+  # ==================== SYSTEM ALERTS ====================
+  - name: system_alerts
+    interval: 30s
+    rules:
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value | humanize }}% on {{ $labels.instance }}"
+          action: "Check top processes with 'docker stats' or 'top'"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanize }}% on {{ $labels.instance }}"
+          action: "Check memory usage with 'free -h' and 'docker stats'"
+
+      # Disk space low
+      - alert: DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"} 
+          / node_filesystem_size_bytes) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Disk space is low"
+          description: "Only {{ $value | humanize }}% disk space left on {{ $labels.mountpoint }}"
+          action: "Clean up old files, logs, or increase disk size"
+
+      # Disk space critical
+      - alert: DiskSpaceCritical
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"} 
+          / node_filesystem_size_bytes) * 100 < 10
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Disk space is critically low"
+          description: "Only {{ $value | humanize }}% disk space left on {{ $labels.mountpoint }}"
+          action: "URGENT: Clean up disk space immediately"
+
+      # High disk I/O
+      - alert: HighDiskIO
+        expr: |
+          rate(node_disk_io_time_seconds_total[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High disk I/O"
+          description: "Disk I/O utilization is {{ $value | humanizePercentage }}"
+          action: "Check for heavy disk operations with 'iotop'"
+
+  # ==================== ELASTICSEARCH ALERTS ====================
+  - name: elasticsearch_alerts
+    interval: 30s
+    rules:
+      # Elasticsearch is down
+      - alert: ElasticsearchDown
+        expr: up{job="elasticsearch"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: search
+        annotations:
+          summary: "Elasticsearch is down"
+          description: "Elasticsearch has been unreachable for more than 2 minutes"
+          action: "Check elasticsearch container: docker-compose logs elasticsearch"
+
+      # Cluster health is not green
+      - alert: ElasticsearchClusterNotHealthy
+        expr: elasticsearch_cluster_health_status{color="green"} != 1
+        for: 5m
+        labels:
+          severity: warning
+          component: search
+        annotations:
+          summary: "Elasticsearch cluster health is not green"
+          description: "Cluster status: {{ $labels.color }}"
+
+      # High JVM memory usage
+      - alert: ElasticsearchHighJVMMemory
+        expr: |
+          elasticsearch_jvm_memory_used_bytes{area="heap"} 
+          / elasticsearch_jvm_memory_max_bytes{area="heap"} > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: search
+        annotations:
+          summary: "Elasticsearch JVM memory usage is high"
+          description: "JVM heap usage: {{ $value | humanizePercentage }}"
+
+  # ==================== NGINX ALERTS ====================
+  - name: nginx_alerts
+    interval: 30s
+    rules:
+      # Nginx is down
+      - alert: NginxDown
+        expr: up{job="nginx"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: proxy
+        annotations:
+          summary: "Nginx is down"
+          description: "Reverse proxy has been down for more than 1 minute"
+          action: "Check nginx container: docker-compose logs nginx"
+
+      # High 4xx error rate
+      - alert: HighClientErrorRate
+        expr: |
+          rate(nginx_http_requests_total{status=~"4.."}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: proxy
+        annotations:
+          summary: "High client error rate (4xx)"
+          description: "Client error rate: {{ $value }} req/s"
+
+  # ==================== BUSINESS METRICS ALERTS ====================
+  - name: business_alerts
+    interval: 5m
+    rules:
+      # Low order conversion rate
+      - alert: LowConversionRate
+        expr: |
+          rate(orders_created_total[1h]) 
+          / rate(product_views_total[1h]) < 0.01
+        for: 1h
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "Low order conversion rate"
+          description: "Conversion rate is {{ $value | humanizePercentage }} (<1%)"
+          action: "Review website performance and user experience"
+
+      # Payment failures spike
+      - alert: PaymentFailuresSpike
+        expr: |
+          rate(payment_failed_total[15m]) > 5
+        for: 15m
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "High payment failure rate"
+          description: "Payment failures: {{ $value }} per second"
+          action: "Check payment gateway integration and logs"
+
+      # No orders for long time
+      - alert: NoOrdersRecently
+        expr: |
+          time() - orders_last_created_timestamp > 3600
+        for: 10m
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "No orders received recently"
+          description: "No orders in the last hour"
+          action: "Check if website is accessible and working properly"
