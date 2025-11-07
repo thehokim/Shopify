@@ -27,7 +27,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [KeyboardButton(
             text="🛍️ Open Store",
-            web_app=WebAppInfo(url="https://yourdomain.com/miniapp")
+            web_app=WebAppInfo(url="https://shopifyforvercel.vercel.app/")
         )],
         [
             KeyboardButton(text="📦 My Orders"),

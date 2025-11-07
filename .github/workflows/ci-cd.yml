@@ -2,9 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master ]
 
 env:
   REGISTRY: ghcr.io
@@ -178,52 +178,6 @@ jobs:
             Commit: ${{ github.sha }}
             Author: ${{ github.actor }}
 
-  # ==================== DEPLOY STAGING ====================
-  deploy-staging:
-    name: Deploy to Staging
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-
-    steps:
-      - name: Deploy to staging server
-        if: vars.STAGING_HOST != ''
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.STAGING_USER }}
-          key: ${{ secrets.STAGING_SSH_KEY }}
-          script: |
-            cd /opt/shopify-clone || cd ~/shopify-clone
-            docker-compose pull api celery_worker
-            docker-compose up -d api celery_worker celery_beat
-            docker-compose exec -T api alembic upgrade head || echo "Migration skipped"
-
-      - name: Notify Telegram - Staging Deployed
-        if: success()
-        uses: appleboy/telegram-action@master
-        with:
-          to: 5008138452
-          token: 8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
-          message: |
-            🚀 Staging deployed!
-            
-            Branch: develop
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-
-      - name: Notify on failure
-        if: failure()
-        uses: appleboy/telegram-action@master
-        with:
-          to: 5008138452
-          token: 8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
-          message: |
-            ❌ Staging deployment failed!
-            
-            Branch: develop
-            Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
   # ==================== DEPLOY PRODUCTION ====================
   deploy-production:
     name: Deploy to Production
@@ -233,7 +187,6 @@ jobs:
 
     steps:
       - name: Deploy to production server
-        if: vars.PROD_HOST != ''
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.PROD_HOST }}
@@ -241,12 +194,12 @@ jobs:
           key: ${{ secrets.PROD_SSH_KEY }}
           script: |
             cd /opt/shopify-clone || cd ~/shopify-clone
-            docker-compose pull api celery_worker celery_beat
-            docker-compose up -d api celery_worker celery_beat
+            git pull origin main
+            docker-compose pull api celery_worker celery_beat monitoring_bot marketplace_bot
+            docker-compose up -d api celery_worker celery_beat monitoring_bot marketplace_bot
             docker-compose exec -T api alembic upgrade head || echo "Migration skipped"
 
       - name: Health check
-        if: vars.PROD_URL != ''
         run: |
           echo "Waiting for deployment..."
           sleep 30
@@ -278,6 +231,8 @@ jobs:
             Commit: ${{ github.sha }}
             Author: ${{ github.actor }}
             Message: ${{ github.event.head_commit.message }}
+            
+            🌐 URL: ${{ secrets.PROD_URL }}
 
       - name: Notify Telegram - Production Failed
         if: failure()
