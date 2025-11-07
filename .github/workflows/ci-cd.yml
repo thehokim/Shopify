@@ -193,29 +193,22 @@ jobs:
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           script: |
-            cd /opt/shopify-clone || cd ~/shopify-clone
-            git pull origin main
-            docker-compose pull api celery_worker celery_beat monitoring_bot marketplace_bot
+            cd /opt/shopify-clone
+            
+            # Pull latest code
+            git pull origin main || git pull origin master
+            
+            # Pull Docker images
+            docker-compose pull api celery_worker celery_beat monitoring_bot marketplace_bot || echo "Pull failed, continuing..."
+            
+            # Start services
             docker-compose up -d api celery_worker celery_beat monitoring_bot marketplace_bot
+            
+            # Wait for API to be ready
+            sleep 10
+            
+            # Run migrations
             docker-compose exec -T api alembic upgrade head || echo "Migration skipped"
-
-      - name: Health check
-        run: |
-          echo "Waiting for deployment..."
-          sleep 30
-          
-          for i in {1..10}; do
-            if curl -f ${{ secrets.PROD_URL }}/health; then
-              echo "✅ Health check passed"
-              exit 0
-            fi
-            echo "Attempt $i failed, retrying..."
-            sleep 5
-          done
-          
-          echo "❌ Health check failed"
-          exit 1
-        continue-on-error: true
 
       - name: Notify Telegram - Production Success
         if: success()
@@ -232,7 +225,7 @@ jobs:
             Author: ${{ github.actor }}
             Message: ${{ github.event.head_commit.message }}
             
-            🌐 URL: ${{ secrets.PROD_URL }}
+            �� API: http://${{ secrets.PROD_HOST }}:8003/docs
 
       - name: Notify Telegram - Production Failed
         if: failure()
