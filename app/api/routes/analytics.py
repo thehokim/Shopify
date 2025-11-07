@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.models import Product, Order, User, UserRole, Wishlist
+from app.models import Product, Order, User
 from app.schemas import AnalyticsSummary
 from app.auth import get_current_user, get_tenant_owner
 
