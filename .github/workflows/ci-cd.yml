@@ -1,8 +1,8 @@
-name: CI/CD Pipeline - Shopify
+name: CI/CD Pipeline - Shopify Clone
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, main ]
   workflow_dispatch:
 
 concurrency:
@@ -10,17 +10,20 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/shopify-clone
 
 jobs:
   build_and_push:
-    name: Build and Push Docker Image
+    name: Build and Push Docker Images
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -34,28 +37,36 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest
-            type=sha,prefix={{branch}}-
-
-      - name: Build and push
+      - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ./Dockerfile
           push: true
           platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:latest
           cache-to: type=inline
 
+      - name: Notify Telegram - Build Success
+        if: success()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.MONITORING_BOT_TOKEN }}
+          message: |
+            ✅ Docker Build Success!
+            
+            📦 Repository: ${{ github.repository }}
+            🌿 Branch: ${{ github.ref_name }}
+            💾 Commit: ${{ github.sha }}
+            👤 Author: ${{ github.actor }}
+            📝 Message: ${{ github.event.head_commit.message }}
+
   deploy:
-    name: Deploy to Production Server
+    name: Deploy to Production
     runs-on: ubuntu-latest
     needs: build_and_push
     timeout-minutes: 15
@@ -63,48 +74,146 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      - name: Copy docker-compose.yml via SCP
+      - name: Copy files via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           port: 22
-          source: "docker-compose.yml"
-          target: "~/shopify-clone/"
+          source: "docker-compose.yml,.dockerignore"
+          target: "/opt/shopify-clone/"
+          strip_components: 0
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         env:
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           port: 22
-          envs: IMAGE_NAME
+          timeout: 15m
+          command_timeout: 15m
+          envs: IMAGE_NAME,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
           script: |
             set -e
             echo "🚀 Starting deployment..."
-
-            cd ~/shopify-clone
-
+            
+            cd /opt/shopify-clone
+            
+            # Write .env file
             echo "📝 Writing .env file..."
             cat > .env << 'ENVEOF'
             ${{ secrets.ENV_FILE }}
             ENVEOF
-
+            
+            # Verify files
+            echo "📋 Verifying files..."
+            ls -lah docker-compose.yml .env
+            
+            # Login to Docker Hub
             echo "🔐 Logging in to Docker Hub..."
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-
+            echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+            
+            # Export image name for docker-compose
+            export IMAGE_NAME="${IMAGE_NAME}"
+            export IMAGE_TAG="latest"
+            
+            # Stop old containers
+            echo "⏹️  Stopping old containers..."
+            docker compose stop api celery_worker celery_beat monitoring_bot marketplace_bot || true
+            
+            # Pull new images
             echo "⬇️  Pulling updated images..."
-            docker compose pull api celery_worker celery_beat monitoring_bot marketplace_bot || true
-
-            echo "🔄 Restarting containers..."
+            docker compose pull api celery_worker celery_beat monitoring_bot marketplace_bot
+            
+            # Start services
+            echo "🔄 Starting services..."
             docker compose up -d --remove-orphans api celery_worker celery_beat monitoring_bot marketplace_bot
+            
+            # Wait for services
+            echo "⏳ Waiting for services to start..."
+            sleep 20
+            
+            # Health check
+            echo "🏥 Health check..."
+            curl -f http://localhost:8003/health || echo "⚠️  API health check failed"
+            
+            # Show status
+            echo "📊 Container status:"
+            docker compose ps
+            
+            # Show logs
+            echo "📋 Recent logs:"
+            docker compose logs --tail=20 api
+            docker compose logs --tail=10 celery_worker
+            docker compose logs --tail=10 monitoring_bot
+            
+            # Cleanup
+            echo "🧹 Cleaning up old images..."
+            docker image prune -af --filter "until=24h" || true
+            
+            echo "✅ Deployment completed successfully!"
 
-            echo "🧹 Cleaning old images..."
-            docker image prune -af || true
+      - name: Notify Telegram - Deploy Success
+        if: success()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.MONITORING_BOT_TOKEN }}
+          message: |
+            ✅ Production Deployment Success!
+            
+            📦 Repository: ${{ github.repository }}
+            🌿 Branch: ${{ github.ref_name }}
+            💾 Commit: ${{ github.sha }}
+            👤 Author: ${{ github.actor }}
+            📝 Message: ${{ github.event.head_commit.message }}
+            
+            🌐 API: http://${{ secrets.PROD_HOST }}:8003/docs
+            📊 Grafana: http://${{ secrets.PROD_HOST }}:3001
+            🐰 RabbitMQ: http://${{ secrets.PROD_HOST }}:15673
 
-            echo "✅ Deployment complete!"
+      - name: Notify Telegram - Deploy Failed
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.MONITORING_BOT_TOKEN }}
+          message: |
+            🚨 DEPLOYMENT FAILED!
+            
+            📦 Repository: ${{ github.repository }}
+            🌿 Branch: ${{ github.ref_name }}
+            💾 Commit: ${{ github.sha }}
+            👤 Author: ${{ github.actor }}
+            
+            🔗 Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Send Email on Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: '🚨 Shopify Clone - Deployment Failed'
+          to: ${{ secrets.SMTP_USER }}
+          from: 'GitHub Actions <${{ secrets.SMTP_USER }}>'
+          body: |
+            Deployment to production server failed!
+            
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            
+            Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
