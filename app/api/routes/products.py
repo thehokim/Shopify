@@ -117,7 +117,8 @@ async def list_products(
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    # УДАЛЕНА АВТОРИЗАЦИЯ, НО МЫ МОЖЕМ ПОПЫТАТЬСЯ ПОЛУЧИТЬ ПОЛЬЗОВАТЕЛЯ, ЕСЛИ ОН ЕСТЬ, ИНАЧЕ None
+    current_user: Optional[User] = Depends(get_current_user) # Изменено: теперь Optional и используется для фильтрации
 ):
     """List products"""
     
@@ -125,10 +126,13 @@ async def list_products(
     query = db.query(Product)
     
     # Filter by tenant
-    if current_user.role in [UserRole.TENANT_OWNER, UserRole.TENANT_STAFF]:
+    if current_user and current_user.role in [UserRole.TENANT_OWNER, UserRole.TENANT_STAFF]:
+        # Если пользователь авторизован как владелец/сотрудник, он видит только свой tenant_id
         query = query.filter(Product.tenant_id == current_user.tenant_id)
     elif tenant_id:
+        # Для неавторизованных пользователей или SUPER_ADMIN, если передан tenant_id
         query = query.filter(Product.tenant_id == tenant_id)
+    # Если пользователь не авторизован и не передан tenant_id, выводятся все продукты (если нет других глобальных фильтров)
     
     # Filter by category
     if category_id:
@@ -146,6 +150,7 @@ async def list_products(
 async def get_product(
     product_id: int,
     db: Session = Depends(get_db)
+    # Здесь авторизация уже отсутствовала
 ):
     """Get product by ID"""
     
