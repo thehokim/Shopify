@@ -117,30 +117,31 @@ async def list_products(
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
-    # УДАЛЕНА АВТОРИЗАЦИЯ, НО МЫ МОЖЕМ ПОПЫТАТЬСЯ ПОЛУЧИТЬ ПОЛЬЗОВАТЕЛЯ, ЕСЛИ ОН ЕСТЬ, ИНАЧЕ None
-    current_user: Optional[User] = Depends(get_current_user) # Изменено: теперь Optional и используется для фильтрации
+    # АВТОРИЗАЦИЯ УДАЛЕНА. ЭНДПОИНТ ТЕПЕРЬ ПУБЛИЧНЫЙ.
+    # current_user: User = Depends(get_current_user)
 ):
-    """List products"""
+    """List products (PUBLIC)"""
     
     # Build query
     query = db.query(Product)
     
-    # Filter by tenant
-    if current_user and current_user.role in [UserRole.TENANT_OWNER, UserRole.TENANT_STAFF]:
-        # Если пользователь авторизован как владелец/сотрудник, он видит только свой tenant_id
-        query = query.filter(Product.tenant_id == current_user.tenant_id)
-    elif tenant_id:
-        # Для неавторизованных пользователей или SUPER_ADMIN, если передан tenant_id
+    # Public access can filter by tenant_id
+    if tenant_id:
         query = query.filter(Product.tenant_id == tenant_id)
-    # Если пользователь не авторизован и не передан tenant_id, выводятся все продукты (если нет других глобальных фильтров)
-    
+        
+    # Дополнительная фильтрация (например, показ только "активных" продуктов для публики)
+    # Это важно для публичного эндпоинта.
+    if status:
+        query = query.filter(Product.status == status)
+    else:
+        # По умолчанию показывать только активные продукты, если статус не указан
+        # Если вы хотите показывать все, удалите этот блок else
+        query = query.filter(Product.status == "active")
+
     # Filter by category
     if category_id:
         query = query.filter(Product.category_id == category_id)
     
-    # Filter by status
-    if status:
-        query = query.filter(Product.status == status)
     
     products = query.offset(skip).limit(limit).all()
     return products
@@ -152,12 +153,14 @@ async def get_product(
     db: Session = Depends(get_db)
     # Здесь авторизация уже отсутствовала
 ):
-    """Get product by ID"""
+    """Get product by ID (PUBLIC)"""
     
     # Try cache first
     cache_key = f"product:{product_id}"
     cached = redis_service.get(cache_key)
     if cached:
+        # Убедитесь, что кешированный продукт активен, если это публичный доступ.
+        # В данном случае предполагаем, что в кеше только активные продукты.
         return cached
     
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -166,6 +169,13 @@ async def get_product(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Product not found"
+        )
+    
+    # Если публичный доступ, возможно, стоит запретить просмотр неактивных продуктов
+    if product.status.value != "active":
+         raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found" # Или "Product is not available"
         )
     
     # Increment views
