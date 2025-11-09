@@ -50,33 +50,6 @@ jobs:
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:latest
           cache-to: type=inline
 
-      - name: Notify Telegram - Build Success
-        if: success()
-        uses: appleboy/telegram-action@master
-        with:
-          to: 5008138452
-          token: 8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
-          message: |
-            ✅ Docker Build Success!
-            
-            📦 Repository: ${{ github.repository }}
-            🌿 Branch: ${{ github.ref_name }}
-            💾 Commit: ${{ github.sha }}
-            👤 Author: ${{ github.actor }}
-
-      - name: Notify Telegram - Build Failed
-        if: failure()
-        uses: appleboy/telegram-action@master
-        with:
-          to: 5008138452
-          token: 8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
-          message: |
-            🚨 Docker Build FAILED!
-            
-            📦 Repository: ${{ github.repository }}
-            🌿 Branch: ${{ github.ref_name }}
-            👤 Author: ${{ github.actor }}
-
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
@@ -172,57 +145,3 @@ jobs:
             docker image prune -af --filter "until=24h" || true
             
             echo "✅ Deployment completed successfully!"
-
-      - name: Notify Telegram - Deploy Success
-        if: success()
-        uses: appleboy/telegram-action@master
-        with:
-          to: 5008138452
-          token: 8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
-          message: |
-            ✅ Production Deployment Success!
-            
-            📦 Repository: ${{ github.repository }}
-            🌿 Branch: ${{ github.ref_name }}
-            💾 Commit: ${{ github.sha }}
-            👤 Author: ${{ github.actor }}
-            
-            🌐 API: http://${{ secrets.PROD_HOST }}:8003/docs
-            📊 Grafana: http://${{ secrets.PROD_HOST }}:3001
-
-      - name: Notify Telegram - Deploy Failed
-        if: failure()
-        uses: appleboy/telegram-action@master
-        with:
-          to: 5008138452
-          token: 8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
-          message: |
-            🚨 DEPLOYMENT FAILED!
-            
-            📦 Repository: ${{ github.repository }}
-            🌿 Branch: ${{ github.ref_name }}
-            💾 Commit: ${{ github.sha }}
-            👤 Author: ${{ github.actor }}
-            
-            🔗 Logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-      - name: Send Email on Failure
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: hokim1430@gmail.com
-          password: evwfxjjkzvcplucu
-          subject: '🚨 Shopify Clone - Deployment Failed'
-          to: hokim1430@gmail.com
-          from: 'GitHub Actions <hokim1430@gmail.com>'
-          body: |
-            Deployment to production server failed!
-            
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-            
-            Check logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}

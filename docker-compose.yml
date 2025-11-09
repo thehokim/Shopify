@@ -48,20 +48,6 @@ services:
     networks:
       - shopify_network
 
-  # ==================== TELEGRAM BOTS ====================
-  monitoring_bot:
-    image: ${IMAGE_NAME:-thehokim/shopify-clone}:${IMAGE_TAG:-latest}
-    container_name: shopify_monitoring_bot
-    command: python -m telegram_bot.monitoring.bot
-    working_dir: /app
-    env_file:
-      - .env
-    depends_on:
-      - api
-    restart: unless-stopped
-    networks:
-      - shopify_network
-
   marketplace_bot:
     image: ${IMAGE_NAME:-thehokim/shopify-clone}:${IMAGE_TAG:-latest}
     container_name: shopify_marketplace_bot
@@ -165,19 +151,6 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-    restart: unless-stopped
-    networks:
-      - shopify_network
-
-  alertmanager:
-    image: prom/alertmanager:latest
-    container_name: shopify_alertmanager
-    ports:
-      - "9094:9093"
-    volumes:
-      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
-    command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
     restart: unless-stopped
     networks:
       - shopify_network
