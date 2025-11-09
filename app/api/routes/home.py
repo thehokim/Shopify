@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from app.database import get_db
@@ -14,220 +14,109 @@ from app.schemas import CategoryResponse
 router = APIRouter(prefix="/home", tags=["Home Page"])
 
 
-@router.get("/featured-products", response_model=List[ProductResponse])
-async def get_featured_products(
-    limit: int = Query(default=8, ge=1, le=50),
+@router.get("", response_model=Dict[str, Any])
+async def get_homepage_data(
+    featured_limit: int = Query(default=8, ge=1, le=50),
+    new_arrivals_limit: int = Query(default=8, ge=1, le=50),
+    best_sellers_limit: int = Query(default=8, ge=1, le=50),
+    deals_limit: int = Query(default=8, ge=1, le=50),
+    categories_limit: int = Query(default=6, ge=1, le=20),
     db: Session = Depends(get_db)
 ):
     """
-    🌟 Получить избранные/популярные товары для главной страницы
+    🏠 Получить все данные для главной страницы одним запросом
     
-    - Возвращает топ товары по рейтингу и количеству заказов
+    Возвращает:
+    - featured_products: Популярные товары
+    - new_arrivals: Новые поступления
+    - best_sellers: Бестселлеры
+    - discounted_products: Товары со скидками
+    - categories: Популярные категории
+    - banners: Баннеры для слайдера
+    - stats: Статистика магазина
     """
-    products = (
+    
+    # 🌟 Featured Products - по рейтингу
+    featured_products = (
         db.query(Product)
         .filter(Product.is_active == True)
         .filter(Product.stock > 0)
         .order_by(desc(Product.rating))
-        .order_by(desc(Product.created_at))
-        .limit(limit)
+        .limit(featured_limit)
         .all()
     )
     
-    return products
-
-
-@router.get("/new-arrivals", response_model=List[ProductResponse])
-async def get_new_arrivals(
-    limit: int = Query(default=8, ge=1, le=50),
-    db: Session = Depends(get_db)
-):
-    """
-    🆕 Получить новые поступления
-    
-    - Товары добавленные за последние 30 дней
-    """
+    # 🆕 New Arrivals - последние 30 дней
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-    
-    products = (
+    new_arrivals = (
         db.query(Product)
         .filter(Product.is_active == True)
         .filter(Product.stock > 0)
         .filter(Product.created_at >= thirty_days_ago)
         .order_by(desc(Product.created_at))
-        .limit(limit)
+        .limit(new_arrivals_limit)
         .all()
     )
     
-    return products
-
-
-@router.get("/best-sellers", response_model=List[ProductResponse])
-async def get_best_sellers(
-    limit: int = Query(default=8, ge=1, le=50),
-    db: Session = Depends(get_db)
-):
-    """
-    🔥 Получить бестселлеры
-    
-    - Товары с наибольшим количеством продаж
-    """
-    # Подсчитываем количество заказов для каждого товара
-    best_sellers = (
+    # 🔥 Best Sellers - с наибольшим количеством продаж
+    best_sellers_query = (
         db.query(
             Product,
             func.count(OrderItem.id).label('order_count')
         )
-        .join(OrderItem, Product.id == OrderItem.product_id)
-        .join(Order, OrderItem.order_id == Order.id)
+        .join(OrderItem, Product.id == OrderItem.product_id, isouter=True)
         .filter(Product.is_active == True)
         .filter(Product.stock > 0)
         .group_by(Product.id)
         .order_by(desc('order_count'))
-        .limit(limit)
+        .limit(best_sellers_limit)
         .all()
     )
+    best_sellers = [product for product, _ in best_sellers_query]
     
-    return [product for product, _ in best_sellers]
-
-
-@router.get("/discounted-products", response_model=List[ProductResponse])
-async def get_discounted_products(
-    limit: int = Query(default=8, ge=1, le=50),
-    db: Session = Depends(get_db)
-):
-    """
-    💰 Получить товары со скидками
-    
-    - Товары у которых discount_price меньше чем price
-    """
-    products = (
+    # 💰 Discounted Products - со скидками
+    discounted_products = (
         db.query(Product)
         .filter(Product.is_active == True)
         .filter(Product.stock > 0)
         .filter(Product.discount_price.isnot(None))
         .filter(Product.discount_price < Product.price)
         .order_by(desc((Product.price - Product.discount_price) / Product.price))
-        .limit(limit)
+        .limit(deals_limit)
         .all()
     )
     
-    return products
-
-
-@router.get("/categories", response_model=List[CategoryResponse])
-async def get_popular_categories(
-    limit: int = Query(default=8, ge=1, le=20),
-    db: Session = Depends(get_db)
-):
-    """
-    📁 Получить популярные категории для главной страницы
-    
-    - Категории с наибольшим количеством активных товаров
-    """
-    categories = (
+    # 📁 Popular Categories
+    categories_query = (
         db.query(
             Category,
             func.count(Product.id).label('product_count')
         )
-        .join(Product, Category.id == Product.category_id)
+        .join(Product, Category.id == Product.category_id, isouter=True)
         .filter(Product.is_active == True)
         .group_by(Category.id)
         .order_by(desc('product_count'))
-        .limit(limit)
+        .limit(categories_limit)
         .all()
     )
+    categories = [category for category, _ in categories_query]
     
-    return [category for category, _ in categories]
-
-
-@router.get("/trending", response_model=List[ProductResponse])
-async def get_trending_products(
-    limit: int = Query(default=8, ge=1, le=50),
-    db: Session = Depends(get_db)
-):
-    """
-    📈 Получить трендовые товары
+    # 📊 Stats
+    total_products = db.query(func.count(Product.id)).filter(
+        Product.is_active == True,
+        Product.stock > 0
+    ).scalar() or 0
     
-    - Товары с наибольшим количеством просмотров за последние 7 дней
-    - (если нет системы просмотров, возвращает по рейтингу)
-    """
-    products = (
-        db.query(Product)
-        .filter(Product.is_active == True)
-        .filter(Product.stock > 0)
-        .order_by(desc(Product.rating))
-        .order_by(desc(Product.created_at))
-        .limit(limit)
-        .all()
-    )
+    total_categories = db.query(func.count(Category.id)).scalar() or 0
     
-    return products
-
-
-@router.get("/flash-deals", response_model=List[ProductResponse])
-async def get_flash_deals(
-    limit: int = Query(default=4, ge=1, le=20),
-    db: Session = Depends(get_db)
-):
-    """
-    ⚡ Получить флеш-распродажи
+    active_deals = db.query(func.count(Product.id)).filter(
+        Product.is_active == True,
+        Product.discount_price.isnot(None),
+        Product.discount_price < Product.price
+    ).scalar() or 0
     
-    - Товары с самыми большими скидками
-    """
-    products = (
-        db.query(Product)
-        .filter(Product.is_active == True)
-        .filter(Product.stock > 0)
-        .filter(Product.discount_price.isnot(None))
-        .filter(Product.discount_price < Product.price)
-        .order_by(desc((Product.price - Product.discount_price) / Product.price))
-        .limit(limit)
-        .all()
-    )
-    
-    return products
-
-
-@router.get("/recommendations", response_model=List[ProductResponse])
-async def get_recommendations(
-    limit: int = Query(default=8, ge=1, le=50),
-    category_id: Optional[int] = None,
-    db: Session = Depends(get_db)
-):
-    """
-    💡 Получить рекомендованные товары
-    
-    - Если указана категория, возвращает товары из этой категории
-    - Иначе возвращает случайные популярные товары
-    """
-    query = (
-        db.query(Product)
-        .filter(Product.is_active == True)
-        .filter(Product.stock > 0)
-    )
-    
-    if category_id:
-        query = query.filter(Product.category_id == category_id)
-    
-    products = (
-        query
-        .order_by(desc(Product.rating))
-        .order_by(func.random())
-        .limit(limit)
-        .all()
-    )
-    
-    return products
-
-@router.get("/banners")
-async def get_homepage_banners():
-    """
-    🎨 Получить баннеры для главной страницы
-    
-    - Временные баннеры (в будущем можно добавить модель Banner)
-    """
-    return [
+    # 🎨 Banners
+    banners = [
         {
             "id": 1,
             "title": "Летняя распродажа",
@@ -253,3 +142,36 @@ async def get_homepage_banners():
             "button_text": "Начать покупки"
         }
     ]
+    
+    return {
+        "featured_products": [ProductResponse.from_orm(p) for p in featured_products],
+        "new_arrivals": [ProductResponse.from_orm(p) for p in new_arrivals],
+        "best_sellers": [ProductResponse.from_orm(p) for p in best_sellers],
+        "discounted_products": [ProductResponse.from_orm(p) for p in discounted_products],
+        "categories": [CategoryResponse.from_orm(c) for c in categories],
+        "banners": banners,
+        "stats": {
+            "total_products": total_products,
+            "total_categories": total_categories,
+            "active_deals": active_deals,
+            "new_arrivals_count": len(new_arrivals)
+        }
+    }
+
+
+# Оставляем отдельные endpoints для гибкости
+@router.get("/featured-products", response_model=List[ProductResponse])
+async def get_featured_products(
+    limit: int = Query(default=8, ge=1, le=50),
+    db: Session = Depends(get_db)
+):
+    """🌟 Получить только популярные товары"""
+    products = (
+        db.query(Product)
+        .filter(Product.is_active == True)
+        .filter(Product.stock > 0)
+        .order_by(desc(Product.rating))
+        .limit(limit)
+        .all()
+    )
+    return products
