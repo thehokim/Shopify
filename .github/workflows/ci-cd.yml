@@ -18,7 +18,6 @@ jobs:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,18 +37,21 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
-          tags: ${{ env.IMAGE_NAME }}:latest
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:latest
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:cache,mode=max
 
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: build_and_push
-
     steps:
       - uses: actions/checkout@v4
-      
-      - uses: appleboy/scp-action@v0.1.7
+
+      - name: Deploy docker-compose.yml
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
@@ -57,17 +59,53 @@ jobs:
           source: "docker-compose.yml"
           target: "/opt/shopify-clone/"
 
-      - uses: appleboy/ssh-action@v1.0.3
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v1.0.3
         env:
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
           TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          SHA_TAG: ${{ github.sha }}
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
-          envs: IMAGE_NAME,TOKEN,USER
+          envs: IMAGE_NAME,TOKEN,USER,SHA_TAG
           script: |
             cd /opt/shopify-clone
+            
+            # Update .env
             cat > .env << 'EOF'
             ${{ secrets.ENV_FILE }}
+            EOF
+            
+            # Login to Docker Hub
+            echo $TOKEN | docker login -u $USER --password-stdin
+            
+            # Pull latest image
+            docker compose pull
+            
+            # Force rebuild API with no cache (critical for code changes)
+            docker compose build --no-cache api
+            
+            # Restart only API service
+            docker compose up -d --force-recreate api
+            
+            # Wait for startup
+            sleep 10
+            
+            # Health check
+            if curl -f http://localhost:8003/health; then
+              echo "✅ Deployment successful! Health check OK."
+            else
+              echo "❌ Health check failed!"
+              exit 1
+            fi
+            
+            # Test public endpoint
+            if curl -f "http://localhost:8003/api/v1/products/?limit=1"; then
+              echo "✅ Public products endpoint works!"
+            else
+              echo "❌ Public products endpoint failed!"
+              exit 1
+            fi
