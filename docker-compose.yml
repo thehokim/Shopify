@@ -144,7 +144,7 @@ services:
       - .:/app
     environment:
       - MARKETPLACE_BOT_TOKEN=${MARKETPLACE_BOT_TOKEN}
-      - WEBAPP_URL=${WEBAPP_URL:-https://shopifyforvercel.vercel.app/}
+      - WEBAPP_URL=${WEBAPP_URL:-https://online-shop-rose-omega.vercel.app/}
       - API_URL=http://api:8000
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopify_db
     depends_on:

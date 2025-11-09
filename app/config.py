@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: int = 5008138452
     
     # Telegram Mini App
-    WEBAPP_URL: str = "https://shopifyforvercel.vercel.app/"
+    WEBAPP_URL: str = "https://online-shop-rose-omega.vercel.app/"
 
     class Config:
         env_file = ".env"
