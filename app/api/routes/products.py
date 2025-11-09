@@ -116,23 +116,32 @@ async def list_products(
     status: Optional[str] = Query(None),
     skip: int = 0,
     limit: int = 50,
-    db: Session = Depends(get_db)
-    # current_user: User = Depends(get_current_user)  ← УБРАНО
+    db: Session = Depends(get_db),
+    # АВТОРИЗАЦИЯ УДАЛЕНА. ЭНДПОИНТ ТЕПЕРЬ ПУБЛИЧНЫЙ.
+    # current_user: User = Depends(get_current_user)
 ):
     """List products (PUBLIC)"""
     
+    # Build query
     query = db.query(Product)
-
+    
+    # Public access can filter by tenant_id
     if tenant_id:
         query = query.filter(Product.tenant_id == tenant_id)
-
+        
+    # Дополнительная фильтрация (например, показ только "активных" продуктов для публики)
+    # Это важно для публичного эндпоинта.
     if status:
         query = query.filter(Product.status == status)
     else:
+        # По умолчанию показывать только активные продукты, если статус не указан
+        # Если вы хотите показывать все, удалите этот блок else
         query = query.filter(Product.status == "active")
 
+    # Filter by category
     if category_id:
         query = query.filter(Product.category_id == category_id)
+    
     
     products = query.offset(skip).limit(limit).all()
     return products
