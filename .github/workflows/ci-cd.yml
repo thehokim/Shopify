@@ -54,8 +54,8 @@ jobs:
         if: success()
         uses: appleboy/telegram-action@master
         with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.MONITORING_BOT_TOKEN }}
+          to: 5008138452
+          token: 8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
           message: |
             ✅ Docker Build Success!
             
@@ -63,7 +63,19 @@ jobs:
             🌿 Branch: ${{ github.ref_name }}
             💾 Commit: ${{ github.sha }}
             👤 Author: ${{ github.actor }}
-            📝 Message: ${{ github.event.head_commit.message }}
+
+      - name: Notify Telegram - Build Failed
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: 5008138452
+          token: 8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
+          message: |
+            🚨 Docker Build FAILED!
+            
+            📦 Repository: ${{ github.repository }}
+            🌿 Branch: ${{ github.ref_name }}
+            👤 Author: ${{ github.actor }}
 
   deploy:
     name: Deploy to Production
@@ -84,7 +96,7 @@ jobs:
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           port: 22
-          source: "docker-compose.yml,.dockerignore"
+          source: "docker-compose.yml"
           target: "/opt/shopify-clone/"
           strip_components: 0
 
@@ -154,7 +166,6 @@ jobs:
             echo "📋 Recent logs:"
             docker compose logs --tail=20 api
             docker compose logs --tail=10 celery_worker
-            docker compose logs --tail=10 monitoring_bot
             
             # Cleanup
             echo "🧹 Cleaning up old images..."
@@ -166,8 +177,8 @@ jobs:
         if: success()
         uses: appleboy/telegram-action@master
         with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.MONITORING_BOT_TOKEN }}
+          to: 5008138452
+          token: 8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
           message: |
             ✅ Production Deployment Success!
             
@@ -175,18 +186,16 @@ jobs:
             🌿 Branch: ${{ github.ref_name }}
             💾 Commit: ${{ github.sha }}
             👤 Author: ${{ github.actor }}
-            📝 Message: ${{ github.event.head_commit.message }}
             
             🌐 API: http://${{ secrets.PROD_HOST }}:8003/docs
             📊 Grafana: http://${{ secrets.PROD_HOST }}:3001
-            🐰 RabbitMQ: http://${{ secrets.PROD_HOST }}:15673
 
       - name: Notify Telegram - Deploy Failed
         if: failure()
         uses: appleboy/telegram-action@master
         with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.MONITORING_BOT_TOKEN }}
+          to: 5008138452
+          token: 8580271436:AAEEcQTRs5Xk5tjEDZq5MOPnuPNsYloSrBQ
           message: |
             🚨 DEPLOYMENT FAILED!
             
@@ -195,7 +204,7 @@ jobs:
             💾 Commit: ${{ github.sha }}
             👤 Author: ${{ github.actor }}
             
-            🔗 Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            🔗 Logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Send Email on Failure
         if: failure()
@@ -203,11 +212,11 @@ jobs:
         with:
           server_address: smtp.gmail.com
           server_port: 587
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASSWORD }}
+          username: hokim1430@gmail.com
+          password: evwfxjjkzvcplucu
           subject: '🚨 Shopify Clone - Deployment Failed'
-          to: ${{ secrets.SMTP_USER }}
-          from: 'GitHub Actions <${{ secrets.SMTP_USER }}>'
+          to: hokim1430@gmail.com
+          from: 'GitHub Actions <hokim1430@gmail.com>'
           body: |
             Deployment to production server failed!
             
@@ -216,4 +225,4 @@ jobs:
             Commit: ${{ github.sha }}
             Author: ${{ github.actor }}
             
-            Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Check logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
