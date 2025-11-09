@@ -11,7 +11,8 @@ from app.api.routes import (
     orders,
     search,
     analytics,
-    upload
+    upload,
+    home
 )
 
 api_router = APIRouter()
@@ -28,3 +29,4 @@ api_router.include_router(orders.router, prefix="/orders", tags=["Orders"])
 api_router.include_router(search.router, prefix="/search", tags=["Search"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 api_router.include_router(upload.router, prefix="/upload", tags=["File Upload"])
+api_router.include_router(home.router, prefix="/home", tags=["Home Page"])
